@@ -1,0 +1,35 @@
+{
+  "name": "devops-tool",
+  "version": "1.0.0",
+  "description": "DevOps automation tool with web interface",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon --config nodemon.json src/app.js",
+    "setup": "node src/scripts/setup.js",
+    "cleanup": "node cleanup.js",
+    "startup": "bash startup.sh"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "bcryptjs": "^2.4.3",
+    "ejs": "^3.1.9",
+    "dotenv": "^16.3.1",
+    "simple-git": "^3.19.1",
+    "yaml": "^2.3.1",
+    "lowdb": "^1.0.0",
+    "uuid": "^9.0.0",
+    "nginx-conf": "^2.1.0",
+    "dockerode": "^3.3.5",
+    "multer": "^1.4.5-lts.1",
+    "compression": "^1.7.4",
+    "helmet": "^7.0.0",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0",
+    "winston": "^3.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+} 
