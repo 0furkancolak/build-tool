@@ -1,5 +1,5 @@
-const projectService = require('../services/projectService');
-const jenkinsService = require('../services/jenkinsService');
+const projectService = require('../services/project.service');
+const jenkinsService = require('../services/jenkins.service');
 const winston = require('winston');
 
 // Logger yapılandırması

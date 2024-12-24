@@ -19,7 +19,7 @@ echo "Firewall yapılandırılıyor..."
 ufw allow ssh
 ufw allow http
 ufw allow https
-ufw allow 5000
+ufw allow 5000/tcp
 echo "y" | ufw enable
 
 # NodeJS kurulumu
@@ -41,13 +41,19 @@ chmod +x /usr/local/bin/docker-compose
 
 # Jenkins kurulumu
 echo "Jenkins kuruluyor..."
-docker run -d \
-  --name jenkins \
-  --restart unless-stopped \
-  -p 8080:8080 \
-  -p 50000:50000 \
-  -v jenkins_home:/var/jenkins_home \
-  jenkins/jenkins:lts
+# Mevcut Jenkins container'ını kontrol et
+if docker ps -a | grep -q jenkins; then
+    echo "Jenkins container'ı zaten mevcut. Yeniden başlatılıyor..."
+    docker start jenkins
+else
+    docker run -d \
+      --name jenkins \
+      --restart unless-stopped \
+      -p 8080:8080 \
+      -p 50000:50000 \
+      -v jenkins_home:/var/jenkins_home \
+      jenkins/jenkins:lts
+fi
 
 # Nginx kurulumu
 echo "Nginx kuruluyor..."
@@ -61,66 +67,84 @@ apt install -y certbot python3-certbot-nginx
 # SSL yenileme için cron job oluştur
 (crontab -l 2>/dev/null; echo "0 0 * * * certbot renew --quiet") | crontab -
 
-# Uygulama dizini oluşturma
-APP_DIR="/opt/devops-tool"
-mkdir -p $APP_DIR
-cd $APP_DIR
-
-# Mevcut dizindeki dosyaları kopyala
+# Proje dosyalarını kontrol et ve gerekirse clone et
 CURRENT_DIR=$(pwd)
-echo "Dosyalar $CURRENT_DIR dizininden kopyalanıyor..."
-cp -r $CURRENT_DIR/* $APP_DIR/ || {
-    echo "Dosya kopyalama hatası. Git ile klonlama deneniyor..."
-    # Eğer dosya kopyalama başarısız olursa ve GIT_REPO tanımlıysa, git clone dene
-    if [ -n "$GIT_REPO" ]; then
-        git clone $GIT_REPO .
-    else
-        echo "Hata: Kaynak dosyalar bulunamadı ve GIT_REPO tanımlanmadı!"
+if [ ! -f "package.json" ] || [ ! -d "src" ]; then
+    echo "Proje dosyaları bulunamadı. GitHub'dan klonlanıyor..."
+    # Mevcut dizini temizle
+    rm -rf * .[^.]*
+    # Projeyi klonla
+    git clone https://github.com/0furkancolak/build-tool.git .
+    if [ $? -ne 0 ]; then
+        echo "Proje klonlama başarısız oldu!"
         exit 1
     fi
+fi
+
+# Kullanılabilir port bulma fonksiyonu
+find_available_port() {
+    # İlk olarak 5000 portunu dene
+    if ! lsof -i:5000 > /dev/null 2>&1; then
+        echo "5000 portu kullanılabilir."
+        echo "5000"
+        return
+    fi
+    
+    echo "5000 portu kullanımda. Alternatif port aranıyor..."
+    # 5000 portu kullanılıyorsa, diğer portları dene
+    for port in {5001..5010}; do
+        if ! lsof -i:$port > /dev/null 2>&1; then
+            echo "$port portu kullanılabilir."
+            ufw allow $port/tcp
+            echo "$port"
+            return
+        fi
+    done
+    
+    echo "Kullanılabilir port bulunamadı (5000-5010 aralığında)"
+    exit 1
 }
+
+# Kullanılabilir portu bul
+AVAILABLE_PORT=$(find_available_port)
+if [ $? -ne 0 ]; then
+    echo "Port bulunamadı. Kurulum iptal ediliyor."
+    exit 1
+fi
+
+echo "Kullanılacak port: $AVAILABLE_PORT"
 
 # Gerekli dizinleri oluştur
 mkdir -p data/projects
 mkdir -p data/uploads
 mkdir -p logs
 
-# package.json kontrolü
-if [ ! -f "package.json" ]; then
-    echo "package.json bulunamadı! Temel package.json oluşturuluyor..."
-    cat > package.json << EOF
-{
-  "name": "devops-tool",
-  "version": "1.0.0",
-  "description": "DevOps automation tool",
-  "main": "src/app.js",
-  "scripts": {
-    "start": "node src/app.js",
-    "setup": "node src/scripts/setup.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "express-session": "^1.17.3",
-    "bcryptjs": "^2.4.3",
-    "ejs": "^3.1.9",
-    "dotenv": "^16.3.1",
-    "winston": "^3.10.0"
-  }
-}
-EOF
-fi
-
 # Uygulama bağımlılıklarını kurma
 echo "Uygulama bağımlılıkları kuruluyor..."
 npm install
+npm install express-rate-limit
+npm install express-session
+npm install connect-mongo
+npm install bcryptjs
+npm install winston
+npm install dotenv
+npm install ejs
+npm install mongoose
+npm install multer
+npm install nodemailer
+npm install simple-git
+npm install yaml
+npm install node-cron
 
 # .env dosyası oluştur
 cat > .env << EOF
-PORT=5000
+PORT=$AVAILABLE_PORT
 NODE_ENV=production
 SESSION_SECRET=$(openssl rand -hex 32)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=\$2a\$10\$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa
+SSL_AUTO=true
+SSL_RENEWAL_TIME="0 0 * * *"
 EOF
 
 # Systemd service dosyası oluşturma
@@ -132,12 +156,13 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=$APP_DIR
-ExecStartPre=/usr/bin/npm run setup
+WorkingDirectory=$CURRENT_DIR
+ExecStartPre=/usr/bin/npm run startup
 ExecStart=/usr/bin/npm start
 Restart=always
 Environment=NODE_ENV=production
-Environment=PORT=5000
+Environment=PORT=$AVAILABLE_PORT
+TimeoutStartSec=180
 
 [Install]
 WantedBy=multi-user.target
@@ -155,7 +180,7 @@ server {
     server_name _;
 
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:$AVAILABLE_PORT;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -168,7 +193,7 @@ server {
 
     # Uploads dizini için özel yapılandırma
     location /uploads {
-        alias $APP_DIR/data/uploads;
+        alias $CURRENT_DIR/data/uploads;
         expires 30d;
         add_header Cache-Control "public, no-transform";
     }
@@ -179,8 +204,11 @@ ln -sf /etc/nginx/sites-available/devops-tool /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
+# SSL otomatik yenileme için cron job
+(crontab -l 2>/dev/null; echo "0 0 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
+
 # Startup script oluştur
-cat > $APP_DIR/startup.sh << 'EOF'
+cat > $CURRENT_DIR/startup.sh << 'EOF'
 #!/bin/bash
 
 # Servisleri kontrol et ve başlat
@@ -202,31 +230,32 @@ fi
 # Proje dizinlerini kontrol et
 dirs=("data/projects" "data/uploads" "logs")
 for dir in "${dirs[@]}"; do
-    if [ ! -d "$APP_DIR/$dir" ]; then
+    if [ ! -d "$dir" ]; then
         echo "$dir dizini oluşturuluyor..."
-        mkdir -p "$APP_DIR/$dir"
-        chown -R root:root "$APP_DIR/$dir"
-        chmod -R 755 "$APP_DIR/$dir"
+        mkdir -p "$dir"
+        chmod -R 755 "$dir"
     fi
 done
 
 # Uploads dizini için özel izinler
-chmod -R 775 "$APP_DIR/data/uploads"
+chmod -R 775 "data/uploads"
 
 echo "Sistem başlatma kontrolleri tamamlandı."
 EOF
 
-chmod +x $APP_DIR/startup.sh
+chmod +x $CURRENT_DIR/startup.sh
 
-# Startup script'ini cron'a ekle
-(crontab -l 2>/dev/null; echo "@reboot $APP_DIR/startup.sh") | crontab -
+# Startup ve uygulamayı başlat
+echo "Uygulama başlatılıyor..."
+npm run startup
+systemctl restart devops-tool
 
 # Jenkins initial password gösterme
 echo "Jenkins kurulumu tamamlandı. Initial Admin Password:"
 docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 
 echo "Kurulum tamamlandı!"
-echo "Sisteme http://sunucu-ip:5000 adresinden erişebilirsiniz."
+echo "Sisteme http://$(curl -s ifconfig.me):$AVAILABLE_PORT adresinden erişebilirsiniz."
 echo "Varsayılan kullanıcı adı: admin"
 echo "Varsayılan şifre: admin"
 echo "ÖNEMLİ: Lütfen ilk girişten sonra şifrenizi değiştirin!"

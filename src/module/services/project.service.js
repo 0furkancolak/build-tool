@@ -6,9 +6,9 @@ const simpleGit = require('simple-git');
 const yaml = require('yaml');
 const { v4: uuidv4 } = require('uuid');
 const winston = require('winston');
-const nginxService = require('./nginxService');
-const sslService = require('./sslService');
-const jenkinsService = require('./jenkinsService');
+const nginxService = require('./nginx.service');
+const sslService = require('./ssl.service');
+const jenkinsService = require('./jenkins.service');
 
 // Logger yapılandırması
 const logger = winston.createLogger({

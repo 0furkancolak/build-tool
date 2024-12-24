@@ -2,7 +2,7 @@ const { exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const winston = require('winston');
-const nginxService = require('./nginxService');
+const nginxService = require('./nginx.service');
 
 // Logger yapılandırması
 const logger = winston.createLogger({

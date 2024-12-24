@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../auth');
 
 router.get('/users', requireAuth, requireAdmin, userController.showUsers);
 router.post('/api/users', requireAuth, requireAdmin, userController.createUser);

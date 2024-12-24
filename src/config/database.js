@@ -15,7 +15,10 @@ if (!fs.existsSync(dbPath)) {
     fs.writeFileSync(dbPath, JSON.stringify({
         users: [],
         projects: [],
-        domains: []
+        domains: [],
+        sessions: [],
+        apiKeys: [],
+        activities: []
     }));
 }
 
@@ -23,12 +26,25 @@ const adapter = new FileSync(dbPath, {
     defaultValue: {
         users: [],
         projects: [],
-        domains: []
+        domains: [],
+        sessions: [],
+        apiKeys: [],
+        activities: []
     },
     serialize: (data) => JSON.stringify(data, null, 2),
     deserialize: JSON.parse
 });
 
 const db = low(adapter);
+
+// Ensure defaults
+db.defaults({
+    users: [],
+    projects: [],
+    domains: [],
+    sessions: [],
+    apiKeys: [],
+    activities: []
+}).write();
 
 module.exports = db; 

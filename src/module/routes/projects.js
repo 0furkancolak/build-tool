@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const projectController = require('../controllers/projectController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth } = require('../auth');
 
 // Multer yapılandırması
 const storage = multer.diskStorage({
